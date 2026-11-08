@@ -1,13 +1,18 @@
 """
 figure_convergence_final.py
 Author: Gianluca Gabbriellini
-Last modified: 2026-11-02
+Last modified: 2026-11-08
 
 Generates Figure 3, the error-vs-step-size comparison of Euler, RK4 and
 NSFD at (lambda,gamma)=(3,1). The NSFD trajectory tracks
 w=sqrt(Omega_gamma) and projects after every step; it previously tracked
 only (x,y) without projecting, which was not the scheme the paper's
 well-posedness and invariance proposition actually covers.
+
+Each method now reaches N=10 exactly, using a shortened final step when
+h does not divide 10 evenly (it previously stopped at n*h < 10 for most
+h values tested); the divergence criterion is checked on every
+integrated coordinate, not only x.
 """
 import os
 import numpy as np
@@ -59,31 +64,35 @@ for _ in range(n):
 xref, yref = x, y
 
 hs = np.array([0.01,0.02,0.05,0.1,0.2,0.3,0.5,0.7,1.0,1.3,1.5,1.8,2.0,2.05,2.1,2.2,2.4])
-err_euler, err_rk4, err_nsfd = [], [], []
-for h in hs:
-    n = int(Ntot/h)
-    x, y, ok = x0, y0, True
-    for _ in range(n):
-        x, y = euler_step(x, y, h, lam, gam)
-        if not np.isfinite(x) or abs(x) > 1e8:
-            ok = False; break
-    err_euler.append(np.hypot(x-xref, y-yref) if ok else np.nan)
 
-    x, y, ok = x0, y0, True
-    for _ in range(n):
-        with np.errstate(over='ignore', invalid='ignore'):
-            x, y = rk4_step(x, y, h, lam, gam)
-        if not np.isfinite(x) or abs(x) > 1e8:
-            ok = False; break
-    err_rk4.append(np.hypot(x-xref, y-yref) if ok else np.nan)
+def integrate_to_endpoint(method, h):
+    """Reach Ntot exactly, shortening only the last step if needed."""
+    x, y, w = x0, y0, np.sqrt(1-x0**2-y0**2)
+    n_full = int(np.floor(Ntot/h))
+    remainder = Ntot - n_full*h
+    steps = [h] * n_full
+    if remainder > 1e-12 * max(1.0, Ntot):
+        steps.append(remainder)
+    for dt in steps:
+        with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
+            if method == 'NSFD':
+                x, y, w = step_2comp_final(x, y, w, phi_of_h(dt), lam, gam)
+                coords = np.array([x, y, w])
+            else:
+                step = euler_step if method == 'Euler' else rk4_step
+                x, y = step(x, y, dt, lam, gam)
+                coords = np.array([x, y])
+        if not np.isfinite(coords).all() or np.any(np.abs(coords) > 1e8):
+            return np.nan
+    return np.hypot(x-xref, y-yref)
 
-    x, y, w, phi = x0, y0, np.sqrt(1-x0**2-y0**2), phi_of_h(h)
-    ok = True
-    for _ in range(n):
-        x, y, w = step_2comp_final(x, y, w, phi, lam, gam)
-        if not np.isfinite(x) or abs(x) > 1e8:
-            ok = False; break
-    err_nsfd.append(np.hypot(x-xref, y-yref) if ok else np.nan)
+err_euler = [integrate_to_endpoint('Euler', h) for h in hs]
+err_rk4 = [integrate_to_endpoint('RK4', h) for h in hs]
+err_nsfd = [integrate_to_endpoint('NSFD', h) for h in hs]
+
+print(f"{'h':>6} {'euler':>14} {'rk4':>14} {'nsfd':>14}")
+for h,e,r,ns in zip(hs,err_euler,err_rk4,err_nsfd):
+    print(f"{h:6.3f} {e:14} {r:14} {ns:14}")
 
 fig, ax = plt.subplots(figsize=(6.5,4.8))
 ax.loglog(hs, err_euler, 'o-', label='Euler', color='tab:red', markersize=4)
@@ -100,9 +109,7 @@ ax.legend(loc='lower right')
 ax.grid(True, which='both', alpha=0.3)
 ax.set_ylim(1e-11, 1e2)
 plt.tight_layout()
-os.makedirs('figs', exist_ok=True)  # so a fresh checkout doesn't crash on savefig
+os.makedirs('figs', exist_ok=True)
 plt.savefig('figs/convergence.pdf')
 plt.savefig('figs/convergence.png', dpi=150)
 print('saved')
-for h,e,r,ns in zip(hs,err_euler,err_rk4,err_nsfd):
-    print(f'h={h:.3f}  euler={e}  rk4={r}  nsfd={ns:.4e}')
