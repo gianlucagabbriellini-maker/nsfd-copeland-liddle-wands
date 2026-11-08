@@ -89,25 +89,35 @@ def integrate_to_endpoint(method, h):
 err_euler = [integrate_to_endpoint('Euler', h) for h in hs]
 err_rk4 = [integrate_to_endpoint('RK4', h) for h in hs]
 err_nsfd = [integrate_to_endpoint('NSFD', h) for h in hs]
+nsfd_at_h10 = integrate_to_endpoint('NSFD', 10.0)
 
 print(f"{'h':>6} {'euler':>14} {'rk4':>14} {'nsfd':>14}")
 for h,e,r,ns in zip(hs,err_euler,err_rk4,err_nsfd):
     print(f"{h:6.3f} {e:14} {r:14} {ns:14}")
+print(f"NSFD at h=10 (not shown on the plotted grid): {nsfd_at_h10}")
 
 fig, ax = plt.subplots(figsize=(6.5,4.8))
 ax.loglog(hs, err_euler, 'o-', label='Euler', color='tab:red', markersize=4)
 ax.loglog(hs, err_rk4, 's-', label='RK4', color='tab:green', markersize=4)
 ax.loglog(hs, err_nsfd, '^-', label='NSFD', color='tab:blue', markersize=4)
-ax.axvline(0.6, color='tab:red', ls=':', lw=1, alpha=0.6)
+# RK4's failure is a clean threshold (finite below h=2.05, non-finite from
+# h=2.1 on), so a single vertical line is an honest summary. Euler is not:
+# it is non-finite at h=0.7, 1.0, 1.3, then finite again (if very large) for
+# every larger h tested, so no single "diverges beyond here" line would be
+# accurate -- the plot below shows the actual erratic values instead of
+# asserting a threshold that is not there.
 ax.axvline(2.05, color='tab:green', ls=':', lw=1, alpha=0.6)
-ax.text(0.63, 2e-5, 'Euler\ndiverges', color='tab:red', fontsize=8, va='bottom')
 ax.text(2.15, 2e-5, 'RK4\ndiverges', color='tab:green', fontsize=8, va='bottom')
 ax.set_xlabel(r'step size $h$')
 ax.set_ylabel(r'error at $N=10$ (Euclidean distance from reference)')
 ax.set_title(r'Error vs.\ step size, $\lambda=3,\ \gamma=1$')
 ax.legend(loc='lower right')
 ax.grid(True, which='both', alpha=0.3)
-ax.set_ylim(1e-11, 1e2)
+# Matches the script's own non-finite/1e8 divergence criterion, so every
+# point the code treats as finite is actually visible here (previously
+# points up to 1e2 were shown, silently clipping two large-but-finite
+# Euler points -- e.g. h=1.5, h=1.8 -- out of the frame).
+ax.set_ylim(1e-11, 1e8)
 plt.tight_layout()
 os.makedirs('figs', exist_ok=True)
 plt.savefig('figs/convergence.pdf')
